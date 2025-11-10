@@ -1,5 +1,6 @@
 ﻿
 using EfcToXamarinAndroid.Core.Configs.ManagerCore;
+using EfcToXamarinAndroid.Core.Models;
 using EfcToXamarinAndroid.Core.Repository;
 using EfcToXamarinAndroid.Core.Services;
 using EfcToXamarinAndroid.MigrationsHelper.Migrations;
@@ -9,6 +10,9 @@ using PermissionStatus = EfcToXamarinAndroid.Core.Services.PermissionStatus;
 
 namespace EfcToXamarinAndroid.Core.ViewModels
 {
+    /// <summary>
+    /// Основная ViewModel приложения, управляющая бизнес-логикой и состоянием UI.
+    /// </summary>
     public class MainViewModel
     {
         private readonly ISmsReader _smsReader;
@@ -20,6 +24,38 @@ namespace EfcToXamarinAndroid.Core.ViewModels
 
         public List<FinanceItem> AllItems { get; private set; } = [];
         public Dictionary<OperacionTyps, List<FinanceItem>> FilteredItems { get; private set; } = new();
+
+        #region Статистические свойства
+        /// <summary>
+        /// Общая сумма доходов за весь период.
+        /// </summary>
+        public float TotalIncome { get; private set; }
+        /// <summary>
+        /// Общая сумма расходов за весь период.
+        /// </summary>
+        public float TotalExpense { get; private set; }
+        /// <summary>
+        /// Расходы, сгруппированные по категориям (ключ - название категории, значение - сумма).
+        /// </summary>
+        public Dictionary<string, float> ExpensesByCategory { get; private set; } = new();
+        /// <summary>
+        /// Общее количество всех операций.
+        /// </summary>
+        public int TotalTransactionsCount { get; private set; }
+        /// <summary>
+        /// Количество операций дохода.
+        /// </summary>
+        public int TotalIncomeCount { get; private set; }
+        /// <summary>
+        /// Количество операций расхода.
+        /// </summary>
+        public int TotalExpenseCount { get; private set; }
+        /// <summary>
+        /// Детальная статистика, сгруппированная по каждому типу операции.
+        /// </summary>
+        public Dictionary<OperacionTyps, OperationTypeStatistics> StatisticsByOperationType { get; private set; } = new();
+        #endregion
+
 
         public event EventHandler? DataUpdated;
 
@@ -51,7 +87,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
             DatesRepositorio.UnreachableChanged += (_, __) => RefreshData();
 
         }
-        private async void RefreshData() => await LoadFinanceItemsAsync();
+        private async Task RefreshData() => await LoadFinanceItemsAsync();
         public async Task LoadFinanceItemsAsync()
         {
             var data = DatesRepositorio.DataItems ?? [];
@@ -75,6 +111,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
                 .ToList();
 
             UpdateFilteredCache();
+            UpdateStatistics();
             DataUpdated?.Invoke(this, EventArgs.Empty);
             await Task.CompletedTask;
         }
@@ -88,6 +125,41 @@ namespace EfcToXamarinAndroid.Core.ViewModels
                     .ToList();
             }
         }
+        /// <summary>
+        /// Вычисляет и обновляет статистические показатели на основе текущего списка всех операций.
+        /// </summary>
+        private void UpdateStatistics()
+        {
+            // Сбрасываем предыдущие значения
+            TotalIncome = 0;
+            TotalExpense = 0;
+            TotalTransactionsCount = 0;
+            TotalIncomeCount = 0;
+            TotalExpenseCount = 0;
+            ExpensesByCategory.Clear();
+
+            // Типы операций, которые считаются расходами
+            var expenseTypes = new[] { OperacionTyps.OPLATA, OperacionTyps.NALICHNYE };
+
+            TotalTransactionsCount = AllItems.Count;
+
+            // Рассчитываем общие доходы и расходы
+            var incomeItems = AllItems.Where(i => i.OperationType == OperacionTyps.ZACHISLENIE).ToList();
+            TotalIncome = incomeItems.Sum(i => i.Sum);
+            TotalIncomeCount = incomeItems.Count;
+
+            var expenseItems = AllItems.Where(i => expenseTypes.Contains(i.OperationType)).ToList();
+            TotalExpense = expenseItems.Sum(i => i.Sum);
+            TotalExpenseCount = expenseItems.Count;
+
+            // Группируем расходы по категориям (MccDescription)
+            // Используем уже отфильтрованный список расходных операций
+            ExpensesByCategory = expenseItems
+                .Where(i => !string.IsNullOrEmpty(i.MccDescription))
+                .GroupBy(i => i.MccDescription!)
+                .ToDictionary(g => g.Key, g => g.Sum(i => i.Sum));
+        }
+
         public IEnumerable<FinanceItem> GetFilteredItems(OperacionTyps type)
         => FilteredItems.TryGetValue(type, out var list) ? list : Enumerable.Empty<FinanceItem>();
 
@@ -104,13 +176,21 @@ namespace EfcToXamarinAndroid.Core.ViewModels
 
         }
 
-        private async void _smsReader_SmsReceived(object? sender, Sms sms)
+        private async Task _smsReader_SmsReceived(object? sender, Sms sms)
         {
-            var smsList = new List<Sms>() { sms };
-            var dataItems = await _dataService.ParseSmsToDataItemsAsync(smsList, _appConfiguration.Banks);
-            if (dataItems?.Count() > 0)
+            try
             {
-                await DatesRepositorio.AddDatas(dataItems);
+                var smsList = new List<Sms>() { sms };
+                var dataItems = await _dataService.ParseSmsToDataItemsAsync(smsList, _appConfiguration.Banks);
+                if (dataItems?.Any() == true)
+                {
+                    await DatesRepositorio.AddDatas(dataItems);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Здесь важна логика обработки ошибок, например, логирование
+                Console.WriteLine($"Ошибка при обработке полученного SMS: {ex.Message}");
             }
         }
 
@@ -120,7 +200,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
             var smsList = await _smsReader.GetAllSmsAsync(_appConfiguration.Banks);
             var dataItems = await _dataService.ParseSmsToDataItemsAsync(smsList, _appConfiguration.Banks);
 
-            if (dataItems?.Count() > 0)
+            if (dataItems?.Any() == true)
             {
                 await DatesRepositorio.AddDatas(dataItems);
             }
@@ -333,6 +413,18 @@ namespace EfcToXamarinAndroid.Core.ViewModels
               .OrderByDescending(x => x.Date)
               .ToList();
             return fintems;
+        }
+       
+        /// <summary>
+        /// Освобождает ресурсы и отписывается от событий, чтобы предотвратить утечки памяти.
+        /// </summary>
+        public void Dispose()
+        {
+            _smsReader.SmsReceived -= _smsReader_SmsReceived;
+            DatesRepositorio.PaymentsChanged -= (_, __) => RefreshData();
+            DatesRepositorio.DepositsChanged -= (_, __) => RefreshData();
+            DatesRepositorio.CashsChanged -= (_, __) => RefreshData();
+            DatesRepositorio.UnreachableChanged -= (_, __) => RefreshData();
         }
     }
 }

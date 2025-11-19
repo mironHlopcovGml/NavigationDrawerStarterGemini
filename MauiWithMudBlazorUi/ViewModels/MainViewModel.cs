@@ -13,7 +13,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
     /// <summary>
     /// Основная ViewModel приложения, управляющая бизнес-логикой и состоянием UI.
     /// </summary>
-    public class MainViewModel
+    public class MainViewModel : IDisposable
     {
         private readonly ISmsReader _smsReader;
         private readonly IFileService _fileService;
@@ -54,6 +54,14 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         /// Детальная статистика, сгруппированная по каждому типу операции.
         /// </summary>
         public Dictionary<OperacionTyps, OperationTypeStatistics> StatisticsByOperationType { get; private set; } = new();
+        /// <summary>
+        /// Количество отфильтрованных операций.
+        /// </summary>
+        public int FiltredTransactionsCount { get; set; }
+        /// <summary>
+        /// Сумма отфильтрованных транзакций.
+        /// </summary>
+        public float FiltredTransactionsSumm { get; set; }
         #endregion
 
 
@@ -124,6 +132,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
                     .Where(f => f.OperationType.ToString() == type.ToString())
                     .ToList();
             }
+
         }
         /// <summary>
         /// Вычисляет и обновляет статистические показатели на основе текущего списка всех операций.
@@ -161,7 +170,17 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         }
 
         public IEnumerable<FinanceItem> GetFilteredItems(OperacionTyps type)
-        => FilteredItems.TryGetValue(type, out var list) ? list : Enumerable.Empty<FinanceItem>();
+        {
+            IEnumerable<FinanceItem> fitredItems;
+            if (type == OperacionTyps.None)
+                fitredItems = AllItems;
+            else
+                fitredItems = FilteredItems.TryGetValue(type, out var list) ? list : Enumerable.Empty<FinanceItem>();
+            FiltredTransactionsCount = fitredItems.Count();
+            FiltredTransactionsSumm = fitredItems.Sum(x => x.Sum);
+            return fitredItems;
+        }
+
 
         public IEnumerable<string?> GetDeskriptions(OperacionTyps type)
         {
@@ -176,7 +195,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
 
         }
 
-        private async Task _smsReader_SmsReceived(object? sender, Sms sms)
+        private async void _smsReader_SmsReceived(object? sender, Sms sms)
         {
             try
             {
@@ -392,10 +411,10 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         // Вставьте следующий метод сюда, например, после метода AddItem()      
         public async Task<IEnumerable<FinanceItem>> GetFinanceItemsChunk(GetItemsRequest request)
         {
-           
 
-            var items =  await DatesRepositorio.GetDataItems(request);
-            var  fintems = items
+
+            var items = await DatesRepositorio.GetDataItems(request);
+            var fintems = items
               .Select(item => new FinanceItem
               {
                   Id = item.Id,
@@ -414,7 +433,7 @@ namespace EfcToXamarinAndroid.Core.ViewModels
               .ToList();
             return fintems;
         }
-       
+
         /// <summary>
         /// Освобождает ресурсы и отписывается от событий, чтобы предотвратить утечки памяти.
         /// </summary>

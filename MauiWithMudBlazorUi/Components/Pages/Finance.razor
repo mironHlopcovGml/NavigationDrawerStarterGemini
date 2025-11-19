@@ -15,16 +15,16 @@
     @* Вкладки могут быть сверху или снизу *@
     @if (TabsOnTop)
     {
-                <MudTabs Centered="true"
-                Elevation="2"
-                MinimumTabWidth="9px"
-                @bind-ActivePanelIndex="activeTabIndex">
-                    <MudTabPanel Icon="@Icons.Material.Filled.List" />
-                    <MudTabPanel Icon="@Icons.Material.Filled.Payment" />
-                    <MudTabPanel Icon="@Icons.Material.Filled.AccountBalance" />
-                    <MudTabPanel Icon="@Icons.Material.Filled.AttachMoney" />
-                    <MudTabPanel Icon="@Icons.Material.Filled.QuestionMark" />
-                </MudTabs>
+        <MudTabs Centered="true"
+                 Elevation="2"
+                 MinimumTabWidth="9px"
+                 ActivePanelIndexChanged="TabChangedAsync">
+            <MudTabPanel Icon="@Icons.Material.Filled.List" />
+            <MudTabPanel Icon="@Icons.Material.Filled.Payment" />
+            <MudTabPanel Icon="@Icons.Material.Filled.AccountBalance" />
+            <MudTabPanel Icon="@Icons.Material.Filled.AttachMoney" />
+            <MudTabPanel Icon="@Icons.Material.Filled.QuestionMark" />
+        </MudTabs>
     }
     <div id="scroll-area" class="content-container" @ref="scrollRef" @key="activeTabIndex">
         @if (VM.AllItems.Count == 0)
@@ -49,54 +49,43 @@
         }
         else
         {
+            <MudPaper Elevation="3" Class="pa-2 ma-1 d-flex justify-space-between">
+                <MudTextField @bind-Value=@VM.FiltredTransactionsCount Label="Количество" Disabled=true></MudTextField>
+                <MudText Typo="Typo.subtitle1">Сумма: <strong>@VM.FiltredTransactionsSumm.ToString("C")</strong></MudText>
+            </MudPaper>
             <Virtualize ItemsProvider="LoadFinanceItems"
-            ItemSize="72"
-            OverscanCount="100">
-                   <ItemContent Context="item">
-                       <MyTItem @key="item.Id"
-                           TItem="FinanceItem"
-                           Item="@item"
-                           ItemTitle="@item.DisplayTitle"
-                           ItemLabel="@item.DisplayDescription"
-                           infoTitle="@item.FormattedSum"
-                           infoLabel=@($"{item.FormattedTime}\n{item.FormattedDate}")
-                           OnItemClick="ItemClicked"/>
-                       <MudDivider />
-                   </ItemContent>
-                   <Placeholder>
-                       <div class="pa-4">Загрузка...</div>
-                   </Placeholder>
+                        ItemSize="72"
+                        OverscanCount="100">
+                <ItemContent Context="item">
+                    <MyTItem @key="item.Id"
+                             TItem="FinanceItem"
+                             Item="@item"
+                             ItemTitle="@item.DisplayTitle"
+                             ItemLabel="@item.DisplayDescription"
+                             infoTitle="@item.FormattedSum"
+                             infoLabel=@($"{item.FormattedTime}\n{item.FormattedDate}")
+                             OnItemClick="ItemClicked" />
+                    <MudDivider />
+                </ItemContent>
+                <Placeholder>
+                    <div class="pa-4">Загрузка...</div>
+                </Placeholder>
             </Virtualize>
 
-                  @*   <Virtualize Items="GetActiveItems().ToList()" ItemSize="72" OverscanCount="60">
-                        <ItemContent Context="item" >
-                    <div @key="item.Id">
-                            <MyTItem
-                                TItem="FinanceItem"
-                                Item="@item"
-                                ItemTitle="@item.DisplayTitle"
-                                ItemLabel="@item.DisplayDescription"
-                                infoTitle="@item.FormattedSum"
-                                infoLabel=@($"{item.FormattedTime}\n{item.FormattedDate}")
-                                OnItemClick="ItemClicked"/>
-                            </div>
-                        </ItemContent>
-                        
-                    </Virtualize> *@
         }
         @* === Кнопка "наверх" от MudBlazor === *@
         <MudScrollToTop Selector="#scroll-area" style="bottom:60px; right:40px;">
             <MudFab Color="Color.Primary"
-             StartIcon="@Icons.Material.Filled.KeyboardArrowUp"
-            style="opacity: 0.7;" />
+                    StartIcon="@Icons.Material.Filled.KeyboardArrowUp"
+                    style="opacity: 0.7;" />
         </MudScrollToTop>
     </div>
 
     <MudTabs Centered="true"
-    Position="Position.Bottom"
-    Elevation="2"
-    MinimumTabWidth="9px"
-    @bind-ActivePanelIndex="activeTabIndex">
+             Position="Position.Bottom"
+             Elevation="2"
+             MinimumTabWidth="9px"
+             ActivePanelIndexChanged="TabChangedAsync">
         <MudTabPanel Icon="@Icons.Material.Filled.List" />
         <MudTabPanel Icon="@Icons.Material.Filled.Payment" />
         <MudTabPanel Icon="@Icons.Material.Filled.AccountBalance" />
@@ -109,21 +98,19 @@
 <style>
     /* Это основной контейнер для всего представления страницы */
     .page-container {
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - var(--mud-appbar-height) + 1rem);
-    overflow: auto;
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - var(--mud-appbar-height) + 1rem);
+        overflow: auto;
     }
 
     /* Этот контейнер содержит таблицу */
     .content-container {
-    flex-direction: column; /* или row */
-    overflow: auto; /* overflow: hidden; */
-    position: relative;
-    flex: 1 1 auto;
-
+        flex-direction: column; /* или row */
+        overflow: auto; /* overflow: hidden; */
+        position: relative;
+        flex: 1 1 auto;
     }
-    
 </style>
 
 
@@ -133,6 +120,7 @@
     private bool TabsOnTop = false; // можно переключать положение вкладок
     private ElementReference scrollRef;
     private readonly DialogOptions _fullScreen = new() { FullScreen = true };
+    private IEnumerable<FinanceItem> curentItems = Enumerable.Empty<FinanceItem>();
 
     protected override async Task OnInitializedAsync()
     {
@@ -149,15 +137,19 @@
                 SmsReader.StartListening(cfg.Banks);
                 await VM.ProcessSmsDataAsync();
             }
-            await InvokeAsync(StateHasChanged);
+            await TabChangedAsync(0);
         });
+    }
+    public void Dispose()
+    {
+        VM.Dispose();
     }
 
     private IEnumerable<FinanceItem> GetActiveItems()
     {
         return activeTabIndex switch
         {
-            0 => VM.AllItems,
+            0 => VM.GetFilteredItems(OperacionTyps.None),
             1 => VM.GetFilteredItems(OperacionTyps.OPLATA),
             2 => VM.GetFilteredItems(OperacionTyps.NALICHNYE),
             3 => VM.GetFilteredItems(OperacionTyps.ZACHISLENIE),
@@ -179,7 +171,7 @@
 
     private async Task ItemClicked(FinanceItem item)
     {
-        var parameters = new DialogParameters<FullScreenFinItemDialog> { { x => x.Item, item.ThisFinanceItem },  { x => x.VM, VM } };
+        var parameters = new DialogParameters<FullScreenFinItemDialog> { { x => x.Item, item.ThisFinanceItem }, { x => x.VM, VM } };
         var dialog = await DialogService.ShowAsync<FullScreenFinItemDialog>("Details", parameters, _fullScreen);
         var result = await dialog.Result;
         if (!result.Canceled)
@@ -190,17 +182,20 @@
 
     private async ValueTask<ItemsProviderResult<FinanceItem>> LoadFinanceItems(ItemsProviderRequest request)
     {
-        // // Допустим, у тебя есть метод получения всех элементов
-        var allItems = GetActiveItems().ToList();
-
         // Берём только нужный диапазон
-        var items = allItems
+        var items = curentItems
             .Skip(request.StartIndex)
             .Take(request.Count)
             .ToList();
         //var items = await VM.GetFinanceItemsChunk(new GetItemsRequest { StartIndex = request.StartIndex, Count = request.Count });
-        return new ItemsProviderResult<FinanceItem>(items, allItems.Count);
+        return new ItemsProviderResult<FinanceItem>(items, curentItems.Count());
     }
 
-    
+    private async Task TabChangedAsync(int index)
+    {
+        activeTabIndex = index;
+        // пересчёт статистики
+        curentItems = GetActiveItems();
+        await InvokeAsync(StateHasChanged);
+    }
 }

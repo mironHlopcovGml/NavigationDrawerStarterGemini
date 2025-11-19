@@ -8,7 +8,8 @@ namespace EfcToXamarinAndroid.Core
         OPLATA = 1,
         ZACHISLENIE = 2,
         NALICHNYE = 3,
-        UNREACHABLE = 4
+        UNREACHABLE = 4,
+        
     }
 
 }

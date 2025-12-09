@@ -62,6 +62,9 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         /// Сумма отфильтрованных транзакций.
         /// </summary>
         public float FiltredTransactionsSumm { get; set; }
+
+        public TabStatisticsDto CurrentStats { get; private set; } = new();
+
         #endregion
 
 
@@ -178,9 +181,58 @@ namespace EfcToXamarinAndroid.Core.ViewModels
                 fitredItems = FilteredItems.TryGetValue(type, out var list) ? list : Enumerable.Empty<FinanceItem>();
             FiltredTransactionsCount = fitredItems.Count();
             FiltredTransactionsSumm = fitredItems.Sum(x => x.Sum);
+            CalculateAdvancedStats(fitredItems);
             return fitredItems;
         }
 
+        private void CalculateAdvancedStats(IEnumerable<FinanceItem> items)
+        {
+            var list = items.ToList();
+            var stats = new TabStatisticsDto();
+
+            if (list.Count > 0)
+            {
+                // 1. Среднее, Мин, Макс
+                stats.AverageCheck = list.Average(x => x.Sum);
+                stats.MaxSum = list.Max(x => x.Sum);
+                stats.MinSum = list.Min(x => x.Sum);
+
+                // 2. Аномалии (Топ 3 по сумме)
+                stats.Anomalies = list.OrderByDescending(x => x.Sum).Take(3).ToList();
+
+                // 3. Топ 5 MCC и проценты
+                // Считаем общую сумму для процентов
+                var totalSum = list.Sum(x => x.Sum);
+                if (totalSum == 0) totalSum = 1; // защита от деления на 0
+
+                stats.TopCategories = list
+                    .Where(x => !string.IsNullOrEmpty(x.MccDescription))
+                    .GroupBy(x => x.MccDescription)
+                    .Select(g => new CategoryStat
+                    {
+                        Name = g.Key!,
+                        Amount = g.Sum(x => x.Sum),
+                        Percentage = (g.Sum(x => x.Sum) / totalSum) * 100
+                    })
+                    .OrderByDescending(x => x.Amount)
+                    .Take(5)
+                    .ToList();
+
+                // 4. График (группируем по дням)
+                // Берем последние 10 дней, где были операции, чтобы график не был пустым
+                var dailyGroups = list
+                    .GroupBy(x => x.Date.Date)
+                    .OrderBy(g => g.Key)
+                    .TakeLast(10) // Ограничиваем точками, чтобы график влез
+                    .ToList();
+
+                stats.DailyChartLabels = dailyGroups.Select(g => g.Key.ToString("dd.MM")).ToArray();
+                stats.DailyChartData = dailyGroups.Select(g => (double)g.Count()).ToArray();
+                // Примечание: Если нужен график сумм, замените g.Count() на g.Sum(x => x.Sum)
+            }
+
+            CurrentStats = stats;
+        }
 
         public IEnumerable<string?> GetDeskriptions(OperacionTyps type)
         {

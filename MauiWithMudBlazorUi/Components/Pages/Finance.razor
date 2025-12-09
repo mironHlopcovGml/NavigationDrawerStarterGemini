@@ -63,6 +63,7 @@
                              ItemTitle="@item.DisplayTitle"
                              ItemLabel="@item.DisplayDescription"
                              infoTitle="@item.FormattedSum"
+                             infoTitleColor="@item.AmountColor"
                              infoLabel=@($"{item.FormattedTime}\n{item.FormattedDate}")
                              OnItemClick="ItemClicked" />
                     <MudDivider />
@@ -71,7 +72,6 @@
                     <div class="pa-4">Загрузка...</div>
                 </Placeholder>
             </Virtualize>
-
         }
         @* === Кнопка "наверх" от MudBlazor === *@
         <MudScrollToTop Selector="#scroll-area" style="bottom:60px; right:40px;">
@@ -124,10 +124,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        VM.DataUpdated += async (_, __) => await InvokeAsync(StateHasChanged);
+          VM.DataUpdated += async (_, __) => await InvokeAsync(StateHasChanged);
         await Task.Yield();
 
-        _ = Task.Run(async () =>
+        await InvokeAsync(async () =>
         {
             await VM.InitializeAsync();
             var granted = await VM.CheckPermissionsAsync();
@@ -137,6 +137,7 @@
                 SmsReader.StartListening(cfg.Banks);
                 await VM.ProcessSmsDataAsync();
             }
+
             await TabChangedAsync(0);
         });
     }

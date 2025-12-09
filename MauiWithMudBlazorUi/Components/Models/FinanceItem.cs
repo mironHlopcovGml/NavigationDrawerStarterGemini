@@ -37,6 +37,7 @@ namespace MauiAppWithMudBlazor.Components.Models
         public string DisplayDescription => !string.IsNullOrEmpty(MccDescription) ? MccDescription : MccDescription ?? "Без описания";
         public string DisplayIcon => GetIconForOperationType();
 
+        public string AmountColor { get; set; }
 
         private string GetFormattedSum()
         {
@@ -48,12 +49,14 @@ namespace MauiAppWithMudBlazor.Components.Models
             {
                 // Если сумма уже отрицательная, оставляем как есть, иначе делаем отрицательной
                 float displaySum = Sum > 0 ? -Sum : Sum;
+                AmountColor = "red";
                 return $"{displaySum:F2}";
             }
             else
             {
                 // Для приходных операций (зачисление и другие) показываем с плюсом
                 float displaySum = Sum < 0 ? -Sum : Sum;
+                AmountColor = "green";
                 return $"+{displaySum:F2}";
             }
         }

@@ -1,4 +1,5 @@
 ﻿@page "/counter"
+
 @using MauiAppWithMudBlazor.Components.Models
 @using EfcToXamarinAndroid.Core.Repository
 @using EfcToXamarinAndroid.Core
@@ -10,79 +11,353 @@
 @inject ISmsReader SmsReader
 @inject IFileService FileService
 
+<div class="page-layout">
 
-@if (VM.AllItems.Count == 0)
-{
-    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="64px" Width="100%" />
-    @for (int i = 0; i < 5; i++)
-    {
-        <MudCard>
-            <MudCardHeader>
-                <CardHeaderAvatar>
-                    <MudSkeleton SkeletonType="SkeletonType.Circle" Width="50px" Height="50px" />
-                </CardHeaderAvatar>
-                <CardHeaderContent>
-                    <MudSkeleton />
-                    <MudSkeleton Animation="Animation.False" />
-                    <MudSkeleton Animation="Animation.Wave" />
-                </CardHeaderContent>
-            </MudCardHeader>
-        </MudCard>
-        <MudDivider />
+    @* --- Панель фильтрации --- *@
+    @* Drawer справа *@
+    <MudDrawer Anchor="Anchor.Right"
+               Open="@isFilterDrawerOpen"
+               Variant="DrawerVariant.Temporary"
+               Elevation="4"
+               Class="filter-drawer"
+               Overlay="true">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.h6">Фильтры</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="ToggleFilterDrawer" Edge="Edge.End" />
+        </MudDrawerHeader>
+
+        @* Контент вставляем напрямую (MudDrawerContent не нужен) *@
+        <div class="pa-3">
+            <MudDateRangePicker Label="Период" @bind-DateRange="filterDateRange" />
+
+            <MudSelect T="OperacionTyps?"
+                       Label="Тип операции"
+                       @bind-Value="filterOperationType"
+                       Class="mt-3">
+                <MudSelectItem Value="null">Все</MudSelectItem>
+                @foreach (var t in Enum.GetValues<OperacionTyps>())
+                {
+                    <MudSelectItem Value="t">@t</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField T="decimal?" Label="Мин. сумма" @bind-Value="filterMinAmount" Class="mt-3" />
+            <MudNumericField T="decimal?" Label="Макс. сумма" @bind-Value="filterMaxAmount" Class="mt-2" />
+
+            <div class="d-flex justify-end mt-4">
+                <MudButton Variant="Variant.Text" OnClick="ClearFilters">Сбросить</MudButton>
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ApplyFilters" Class="ml-2">Применить</MudButton>
+            </div>
+        </div>
+    </MudDrawer>
+
+    @* Кнопка открытия — например в .backdrop-header *@
+    <MudIconButton Icon="@Icons.Material.Filled.FilterList"
+                   Color="Color.Inherit"
+                   OnClick="ToggleFilterDrawer"
+                   Class="filter-button" />
+
+
+    @* --- СЛОЙ 1: Статистика (Закреплена сзади) --- *@
+    <div class="backdrop-header">
+        @if (TabsOnTop)
+        {
+            <MudTabs Centered="true" Color="Color.Primary" Elevation="0" ActivePanelIndexChanged="TabChangedAsync">
+                <MudTabPanel Icon="@Icons.Material.Filled.List" />
+                <MudTabPanel Icon="@Icons.Material.Filled.Payment" />
+                <MudTabPanel Icon="@Icons.Material.Filled.AccountBalance" />
+                <MudTabPanel Icon="@Icons.Material.Filled.AttachMoney" />
+                <MudTabPanel Icon="@Icons.Material.Filled.QuestionMark" />
+            </MudTabs>
+        }
+
+        <div class="stats-content px-2 py-2" style="height: 100%;">
+            <MudCarousel Class="stats-carousel"
+                         ShowArrows="false"
+                         ShowBullets="false"
+                         AutoCycle="true"
+                         TData="object"
+                         Style="height: 100%;">
+
+                @* СЛАЙД 1: Общие цифры (Баланс, Средний, Мин/Макс) *@
+                <MudCarouselItem Transition="Transition.Slide">
+                    <div class="d-flex flex-column justify-center align-center h-100 pa-2">
+                        <MudText Typo="Typo.h4" Style="font-weight:bold;">@VM.FiltredTransactionsSumm.ToString("C0")</MudText>
+                        <MudText Typo="Typo.caption" Class="mb-4">Общая сумма (@VM.FiltredTransactionsCount оп.)</MudText>
+
+                        <MudGrid Class="w-100">
+                            <MudItem xs="4" Class="text-center">
+                                <MudText Typo="Typo.caption">Средний</MudText>
+                                <MudText Typo="Typo.subtitle2">@VM.CurrentStats.AverageCheck.ToString("N0")</MudText>
+                            </MudItem>
+                            <MudItem xs="4" Class="text-center">
+                                <MudText Typo="Typo.caption">Макс.</MudText>
+                                <MudText Typo="Typo.subtitle2" Color="Color.Success">@VM.CurrentStats.MaxSum.ToString("N0")</MudText>
+                            </MudItem>
+                            <MudItem xs="4" Class="text-center">
+                                <MudText Typo="Typo.caption">Мин.</MudText>
+                                <MudText Typo="Typo.subtitle2" Color="Color.Error">@VM.CurrentStats.MinSum.ToString("N0")</MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </div>
+                </MudCarouselItem>
+
+                @* СЛАЙД 2: График по дням *@
+                <MudCarouselItem Transition="Transition.Slide">
+                    <div class="d-flex flex-column align-center justify-center h-100 pa-2">
+                        <MudText Typo="Typo.caption">Динамика операций (кол-во)</MudText>
+                        @if (VM.CurrentStats.DailyChartData.Length > 0)
+                        {
+                            <MudChart ChartType="ChartType.Bar"
+                                      ChartSeries="@(new List<ChartSeries>() { new ChartSeries() { Name = "Операции", Data = VM.CurrentStats.DailyChartData } })"
+                                      XAxisLabels="@VM.CurrentStats.DailyChartLabels"
+                                      Width="100%"
+                                      Height="140px"
+                                      LegendPosition="Position.Bottom" />
+                        }
+                        else
+                        {
+                            <MudText>Нет данных для графика</MudText>
+                        }
+                    </div>
+                </MudCarouselItem>
+
+                @* СЛАЙД 3: Топ категорий *@
+                <MudCarouselItem Transition="Transition.Slide">
+                    <div class="d-flex flex-column justify-center h-100 pa-2">
+                        <MudText Typo="Typo.caption" Class="mb-1 text-center">Топ 5 категорий</MudText>
+                        @foreach (var cat in VM.CurrentStats.TopCategories)
+                        {
+                            <div class="d-flex justify-space-between align-center mb-1">
+                                <MudText Typo="Typo.caption" Style="width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@cat.Name</MudText>
+                                <MudProgressLinear Color="Color.Secondary" Value="@cat.Percentage" Class="mx-2" Style="width: 30%;" />
+                                <MudText Typo="Typo.caption" Style="width: 30%; text-align: right;">@cat.Amount.ToString("N0") (@cat.Percentage.ToString("F0")%)</MudText>
+                            </div>
+                        }
+                    </div>
+                </MudCarouselItem>
+
+                @* СЛАЙД 4: Аномалии *@
+                <MudCarouselItem Transition="Transition.Slide">
+                    <div class="d-flex flex-column justify-center h-100 pa-2">
+                        <MudText Typo="Typo.caption" Class="mb-2 text-center">Топ 3 выброса (Max)</MudText>
+                        @foreach (var item in VM.CurrentStats.Anomalies)
+                        {
+                            <div class="d-flex justify-space-between align-center py-1 border-b" style="border-color: rgba(255,255,255,0.2);">
+                                <div class="d-flex flex-column">
+                                    <MudText Typo="Typo.body2">@item.Description</MudText>
+                                    <MudText Typo="Typo.caption" Style="opacity:0.7">@item.Date.ToString("dd MMM")</MudText>
+                                </div>
+                                <MudText Typo="Typo.body2" Style="font-weight:bold;">@item.Sum.ToString("N0")</MudText>
+                            </div>
+                        }
+                    </div>
+                </MudCarouselItem>
+
+            </MudCarousel>
+       
+        </div>
+    </div>
+
+    @* --- СЛОЙ 2: Скроллящаяся область (Лежит поверх статистики) --- *@
+    <div id="scroll-area" class="scroll-layer" @key="activeTabIndex">
+
+        <div class="header-spacer"></div>
+
+        <MudPaper Class="content-sheet rounded-t-xl" Elevation="4">
+
+            @if (VM.AllItems.Count == 0)
+            {
+                <div class="pa-4">
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="50px" Class="mb-4" />
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100px" />
+                </div>
+            }
+            else
+            {
+                <Virtualize ItemsProvider="LoadFinanceItems"
+                            ItemSize="72"
+                            OverscanCount="20">
+                    <ItemContent Context="item">
+                        <MyTItem @key="item.Id"
+                                 TItem="FinanceItem"
+                                 Item="@item"
+                                 ItemTitle="@item.DisplayTitle"
+                                 ItemLabel="@item.DisplayDescription"
+                                 infoTitle="@item.FormattedSum"
+                                 infoTitleColor="@item.AmountColor"
+                                 infoLabel=@($"{item.FormattedTime}\n{item.FormattedDate}")
+                                 OnItemClick="ItemClicked" />
+                        <MudDivider />
+                    </ItemContent>
+                    <Placeholder>
+                        <div class="pa-4 text-center">Загрузка...</div>
+                    </Placeholder>
+                </Virtualize>
+            }
+
+            <div style="height: 80px;"></div>
+        </MudPaper>
+
+        <MudScrollToTop Selector="#scroll-area" Style="bottom: 80px; right: 20px;">
+            <MudFab Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowUpward" />
+        </MudScrollToTop>
+    </div>
+
+    @* --- СЛОЙ 3: Нижние табы (Всегда поверх всего) --- *@
+    <div class="bottom-tabs">
+        <MudTabs Centered="true"
+                 Position="Position.Bottom"
+                 Elevation="8"
+                 Color="Color.Surface"
+                 ApplyEffectsToContainer="true"
+                 MinimumTabWidth="9px"
+                 ActivePanelIndexChanged="TabChangedAsync">
+            <MudTabPanel Icon="@Icons.Material.Filled.List" />
+            <MudTabPanel Icon="@Icons.Material.Filled.Payment" />
+            <MudTabPanel Icon="@Icons.Material.Filled.AccountBalance" />
+            <MudTabPanel Icon="@Icons.Material.Filled.AttachMoney" />
+            <MudTabPanel Icon="@Icons.Material.Filled.QuestionMark" />
+        </MudTabs>
+    </div>
+
+</div>
+
+<style>
+    /* Переменная для высоты "шапки" со статистикой.
+           Если добавите табы сверху, увеличьте это значение (например, до 180px) */
+    :root {
+        --header-height: 220px;
+        --tab-panel-height: 48px
     }
-}
-else
-{
-    <MudScrollToTop TopOffset="100"
-                    OnScroll="OnScroll"
-                    Selector="#unique_id_scroll_section"
-                    VisibleCssClass="visible absolute"
-                    HiddenCssClass="invisible">
-        <span class="mud-scroll-to-top @scrolVisible" @onclick="OnFabButtonClick" style="z-index:2001;">
-            <button type="button" class=" @scrolVisible mud-button-root mud-fab mud-fab-primary mud-fab-size-large mud-ripple" _bl_67>
-                <span class="mud-fab-label @scrolVisible">
-                    <svg class="mud-icon-root mud-svg-icon mud-icon-size-medium" focusable="false" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M0 0h24v24H0z" fill="none"></path>
-                        <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z">
-                        </path>
-                    </svg>
-                </span>
-            </button>
-        </span>
-    </MudScrollToTop>
-    <MudTabs KeepPanelsAlive="true" Position="Position.Bottom" Elevation="0">
-        <MudTabPanel Text="Tab One" Style="width:100%">
-            <MudTable id="unique_id_scroll_section" style="@tableStyle" T="FinanceItem" Items="VM.AllItems" Virtualize="true" Hover="true" OnRowClick="RowClickEvent" OverscanCount="16">
-                <RowTemplate>
-                    <MyItem Icon="@GetIconForOperation(context.OperationType.ToString())"
-                            ItemTitle="@context.DisplayTitle"
-                            ItemLabel="@context.DisplayDescription"
-                            infoTitle="@context.FormattedSum"
-                            infoLabel=@($"{@context.FormattedTime}\n{@context.FormattedDate}") />
-                </RowTemplate>
-            </MudTable>
 
-        </MudTabPanel>
-    </MudTabs>
-}
+    .page-layout {
+        position: relative;
+        height: calc(100vh - var(--mud-appbar-height) + 1rem);
+        overflow: hidden;
+        /* background-color: var(--mud-palette-primary); */
+    }
 
+    /* СЛОЙ 1: Статистика */
+    .backdrop-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--header-height);
+        z-index: 1; /* Самый нижний слой */
+        color: white;
+        pointer-events: auto;
+    }
+
+    .stats-carousel {
+        height: 100%;
+        background: transparent;
+    }
+    /* Скрываем стандартные кнопки навигации карусели, если они мешают */
+    /*  .mud-carousel-transition-fade {
+        height: 100%;
+    } */
+
+    /* СЛОЙ 2: Область скролла */
+    .scroll-layer {
+        position: absolute;
+        top: 0;
+        bottom: 0; /* Растягиваем на всю высоту */
+        left: 0;
+        right: 0;
+        overflow-y: auto; /* Скролл происходит здесь */
+        height: calc(100vh - var(--mud-appbar-height) - var(--tab-panel-height) + 1rem);
+        z-index: 2; /* Слой выше статистики */
+        -webkit-overflow-scrolling: touch; /* Плавный скролл на iOS */
+        pointer-events: none;
+    }
+
+        .scroll-layer .content-sheet {
+            pointer-events: auto;
+        }
+        /* ВАЖНО: вернуть кликабельность кнопке "вверх" */
+        .scroll-layer .mud-scroll-to-top,
+        .scroll-layer .mud-fab {
+            pointer-events: auto;
+        }
+    /* Прозрачный блок, через который видно статистику */
+    .header-spacer {
+        height: var(--header-height);
+        width: 100%;
+        background: transparent;
+        pointer-events: none; 
+        /* Важно: клики должны проходить сквозь пустоту, если там кнопки (pointer-events: none),
+               но для простого текста можно оставить как есть */
+    }
+
+    /* Сам белый лист */
+    .content-sheet {
+        background-color: var(--mud-palette-surface);
+        min-height: calc(100% - var(--header-height)); /* Чтобы заполнить экран */
+        position: relative;
+        box-shadow: 0px -4px 15px rgba(0,0,0,0.2);
+       /*  overflow: hidden; /* чтобы скролл-контент не ломал радиус */ */
+    }
+
+    /* СЛОЙ 3: Нижние табы */
+    .bottom-tabs {
+        position: absolute;
+        height: var(--tab-panel-height);
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 10; /* Поверх всего */
+    }
+</style>
 
 @code {
-    private bool isInitialized = false;
-    private List<FinanceItem> financeItems = new List<FinanceItem>();
+    private bool isFilterDrawerOpen;
+
+    private DateRange filterDateRange = new(
+        DateTime.Today.AddDays(-30),
+        DateTime.Today
+    );
+
+    private OperacionTyps? filterOperationType;
+    private decimal? filterMinAmount;
+    private decimal? filterMaxAmount;
+
+    private void ToggleFilterDrawer()
+    {
+        isFilterDrawerOpen = !isFilterDrawerOpen;
+    }
+
+    private void ApplyFilters()
+    {
+        VM.ApplyAdvancedFilters(
+            filterDateRange,
+            filterOperationType,
+            filterMinAmount,
+            filterMaxAmount
+        );
+
+        isFilterDrawerOpen = false;
+
+        curentItems = GetActiveItems();
+        StateHasChanged();
+    }
+    // Ваш существующий C# код остается без изменений...
+    // ...
+
     private int activeTabIndex = 0;
-    private string tableStyle = "height:calc(100vh - 98px); overflow-y:auto;";
+    private bool TabsOnTop = false;
+    private ElementReference scrollRef;
     private readonly DialogOptions _fullScreen = new() { FullScreen = true };
-    private string scrolVisible = string.Empty;
-
-    private readonly Dictionary<OperacionTyps, List<FinanceItem>> filteredCache = new();
-
+    private IEnumerable<FinanceItem> curentItems = Enumerable.Empty<FinanceItem>();
 
     protected override async Task OnInitializedAsync()
     {
         VM.DataUpdated += async (_, __) => await InvokeAsync(StateHasChanged);
-        await Task.Yield(); // даст UI возможность отрендериться
-        _ = Task.Run(async () =>
+        await Task.Yield();
+
+        await InvokeAsync(async () =>
         {
             await VM.InitializeAsync();
             var granted = await VM.CheckPermissionsAsync();
@@ -92,60 +367,48 @@ else
                 SmsReader.StartListening(cfg.Banks);
                 await VM.ProcessSmsDataAsync();
             }
-            await InvokeAsync(StateHasChanged);
+
+            await TabChangedAsync(0);
         });
-
-
-#if ANDROID
-   // tableStyle = string.Empty;
-#endif
-
-        MessagingCenter.Subscribe<MainPage, string>(this, "ShowToTop", (sender, args) =>
-        {
-            scrolVisible = args;
-            StateHasChanged();
-        });
-       
+    }
+    public void Dispose()
+    {
+        VM.Dispose();
     }
 
-   
-
-    private async Task RowClickEvent(TableRowClickEventArgs<FinanceItem> tableRowClickEventArgs)
+    private IEnumerable<FinanceItem> GetActiveItems()
     {
-        var item = tableRowClickEventArgs.Item;
-        var message = $"Операция: {item.DisplayTitle}\nСумма: {item.FormattedSum}\nДата: {item.FormattedDate}\nОписание: {item.DisplayDescription}";
-
-        // Можно добавить диалог с деталями операции
-        System.Diagnostics.Debug.WriteLine(message);
-    }
-
-  
-
-    private void OnScroll(ScrollEventArgs e)
-    {
-        scrolVisible = (e.FirstChildBoundingClientRect.Top * -1) switch
+        return activeTabIndex switch
         {
-            var x when x > 1 => "visible",
-            _ => "hiden"
+            0 => VM.GetFilteredItems(OperacionTyps.None),
+            1 => VM.GetFilteredItems(OperacionTyps.OPLATA),
+            2 => VM.GetFilteredItems(OperacionTyps.NALICHNYE),
+            3 => VM.GetFilteredItems(OperacionTyps.ZACHISLENIE),
+            4 => VM.GetFilteredItems(OperacionTyps.UNREACHABLE),
+            _ => Enumerable.Empty<FinanceItem>()
         };
     }
 
-    void OnFabButtonClick()
+    private async Task ItemClicked(FinanceItem item)
     {
-        JSRuntime.InvokeVoidAsync("scrollToTop");
-        scrolVisible = string.Empty;
+        var parameters = new DialogParameters<FullScreenFinItemDialog> { { x => x.Item, item.ThisFinanceItem }, { x => x.VM, VM } };
+        var dialog = await DialogService.ShowAsync<FullScreenFinItemDialog>("Details", parameters, _fullScreen);
+        await dialog.Result;
     }
 
-
-    private string GetIconForOperation(string operationType)
+    private async ValueTask<ItemsProviderResult<FinanceItem>> LoadFinanceItems(ItemsProviderRequest request)
     {
-        return operationType switch
-        {
-            "OPLATA" => Icons.Material.Filled.Payment,
-            "ZACHISLENIE" => Icons.Material.Filled.AccountBalance,
-            "NALICHNYE" => Icons.Material.Filled.AttachMoney,
-            "UNREACHABLE" => Icons.Material.Filled.QuestionMark,
-            _ => Icons.Material.Filled.Payment
-        };
+        var items = curentItems
+            .Skip(request.StartIndex)
+            .Take(request.Count)
+            .ToList();
+        return new ItemsProviderResult<FinanceItem>(items, curentItems.Count());
+    }
+
+    private async Task TabChangedAsync(int index)
+    {
+        activeTabIndex = index;
+        curentItems = GetActiveItems();
+        await InvokeAsync(StateHasChanged);
     }
 }

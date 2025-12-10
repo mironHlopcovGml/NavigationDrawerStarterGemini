@@ -13,52 +13,6 @@
 
 <div class="page-layout">
 
-    @* --- Панель фильтрации --- *@
-    @* Drawer справа *@
-    <MudDrawer Anchor="Anchor.Right"
-               Open="@isFilterDrawerOpen"
-               Variant="DrawerVariant.Temporary"
-               Elevation="4"
-               Class="filter-drawer"
-               Overlay="true">
-        <MudDrawerHeader>
-            <MudText Typo="Typo.h6">Фильтры</MudText>
-            <MudSpacer />
-            <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="ToggleFilterDrawer" Edge="Edge.End" />
-        </MudDrawerHeader>
-
-        @* Контент вставляем напрямую (MudDrawerContent не нужен) *@
-        <div class="pa-3">
-            <MudDateRangePicker Label="Период" @bind-DateRange="filterDateRange" />
-
-            <MudSelect T="OperacionTyps?"
-                       Label="Тип операции"
-                       @bind-Value="filterOperationType"
-                       Class="mt-3">
-                <MudSelectItem Value="null">Все</MudSelectItem>
-                @foreach (var t in Enum.GetValues<OperacionTyps>())
-                {
-                    <MudSelectItem Value="t">@t</MudSelectItem>
-                }
-            </MudSelect>
-
-            <MudNumericField T="decimal?" Label="Мин. сумма" @bind-Value="filterMinAmount" Class="mt-3" />
-            <MudNumericField T="decimal?" Label="Макс. сумма" @bind-Value="filterMaxAmount" Class="mt-2" />
-
-            <div class="d-flex justify-end mt-4">
-                <MudButton Variant="Variant.Text" OnClick="ClearFilters">Сбросить</MudButton>
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ApplyFilters" Class="ml-2">Применить</MudButton>
-            </div>
-        </div>
-    </MudDrawer>
-
-    @* Кнопка открытия — например в .backdrop-header *@
-    <MudIconButton Icon="@Icons.Material.Filled.FilterList"
-                   Color="Color.Inherit"
-                   OnClick="ToggleFilterDrawer"
-                   Class="filter-button" />
-
-
     @* --- СЛОЙ 1: Статистика (Закреплена сзади) --- *@
     <div class="backdrop-header">
         @if (TabsOnTop)
@@ -73,10 +27,11 @@
         }
 
         <div class="stats-content px-2 py-2" style="height: 100%;">
-            <MudCarousel Class="stats-carousel"
+            <MudCarousel Class="stats-carousel "
+                         @bind-SelectedIndex="selectedIndex"
                          ShowArrows="false"
                          ShowBullets="false"
-                         AutoCycle="true"
+                         AutoCycle="false"
                          TData="object"
                          Style="height: 100%;">
 
@@ -156,14 +111,19 @@
                 </MudCarouselItem>
 
             </MudCarousel>
-       
+
         </div>
     </div>
 
     @* --- СЛОЙ 2: Скроллящаяся область (Лежит поверх статистики) --- *@
     <div id="scroll-area" class="scroll-layer" @key="activeTabIndex">
 
-        <div class="header-spacer"></div>
+        <div class="header-spacer">
+            <MudSwipeArea OnSwipeEnd="SwipeEndAsync" Class="stats-carousel" />
+            <div class="edge-hint left @(showLeftHint ? "show" : "")"></div>
+            <div class="edge-hint right @(showRightHint ? "show" : "")"></div>
+        </div>
+
 
         <MudPaper Class="content-sheet rounded-t-xl" Elevation="4">
 
@@ -176,7 +136,7 @@
             }
             else
             {
-                <Virtualize ItemsProvider="LoadFinanceItems"
+                <Virtualize @ref="_virtualizeComponent" ItemsProvider="LoadFinanceItems"
                             ItemSize="72"
                             OverscanCount="20">
                     <ItemContent Context="item">
@@ -203,6 +163,13 @@
         <MudScrollToTop Selector="#scroll-area" Style="bottom: 80px; right: 20px;">
             <MudFab Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowUpward" />
         </MudScrollToTop>
+
+        @* === Кнопка "наверх" от MudBlazor === *@
+        <MudScrollToTop Selector="#scroll-area" style="bottom:60px; right:40px;">
+            <MudFab Color="Color.Primary"
+                    StartIcon="@Icons.Material.Filled.KeyboardArrowUp"
+                    style="opacity: 0.7;" />
+        </MudScrollToTop>
     </div>
 
     @* --- СЛОЙ 3: Нижние табы (Всегда поверх всего) --- *@
@@ -226,7 +193,7 @@
 
 <style>
     /* Переменная для высоты "шапки" со статистикой.
-           Если добавите табы сверху, увеличьте это значение (например, до 180px) */
+                   Если добавите табы сверху, увеличьте это значение (например, до 180px) */
     :root {
         --header-height: 220px;
         --tab-panel-height: 48px
@@ -255,10 +222,6 @@
         height: 100%;
         background: transparent;
     }
-    /* Скрываем стандартные кнопки навигации карусели, если они мешают */
-    /*  .mud-carousel-transition-fade {
-        height: 100%;
-    } */
 
     /* СЛОЙ 2: Область скролла */
     .scroll-layer {
@@ -271,26 +234,18 @@
         height: calc(100vh - var(--mud-appbar-height) - var(--tab-panel-height) + 1rem);
         z-index: 2; /* Слой выше статистики */
         -webkit-overflow-scrolling: touch; /* Плавный скролл на iOS */
-        pointer-events: none;
+        pointer-events: auto;
     }
 
-        .scroll-layer .content-sheet {
-            pointer-events: auto;
-        }
-        /* ВАЖНО: вернуть кликабельность кнопке "вверх" */
-        .scroll-layer .mud-scroll-to-top,
-        .scroll-layer .mud-fab {
-            pointer-events: auto;
-        }
+
     /* Прозрачный блок, через который видно статистику */
     .header-spacer {
         height: var(--header-height);
         width: 100%;
-        background: transparent;
-        pointer-events: none; 
-        /* Важно: клики должны проходить сквозь пустоту, если там кнопки (pointer-events: none),
-               но для простого текста можно оставить как есть */
+        pointer-events: auto; /* ← главное свойство */
+        position: relative;
     }
+
 
     /* Сам белый лист */
     .content-sheet {
@@ -298,7 +253,8 @@
         min-height: calc(100% - var(--header-height)); /* Чтобы заполнить экран */
         position: relative;
         box-shadow: 0px -4px 15px rgba(0,0,0,0.2);
-       /*  overflow: hidden; /* чтобы скролл-контент не ломал радиус */ */
+        pointer-events: auto;
+        /*  overflow: hidden; /* чтобы скролл-контент не ломал радиус */ */
     }
 
     /* СЛОЙ 3: Нижние табы */
@@ -310,42 +266,41 @@
         right: 0;
         z-index: 10; /* Поверх всего */
     }
+
+    .edge-hint {
+        position: absolute;
+        top: 0;
+        height: 100%;
+        width: 24px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease-out;
+    }
+
+        .edge-hint.left {
+            left: 0;
+            background: linear-gradient(to right, rgba(255,255,255,0.25), transparent);
+        }
+
+        .edge-hint.right {
+            right: 0;
+            background: linear-gradient(to left, rgba(255,255,255,0.25), transparent);
+        }
+
+        .edge-hint.show {
+            opacity: 1;
+        }
+
+
 </style>
 
 @code {
-    private bool isFilterDrawerOpen;
-
-    private DateRange filterDateRange = new(
-        DateTime.Today.AddDays(-30),
-        DateTime.Today
-    );
-
-    private OperacionTyps? filterOperationType;
-    private decimal? filterMinAmount;
-    private decimal? filterMaxAmount;
-
-    private void ToggleFilterDrawer()
-    {
-        isFilterDrawerOpen = !isFilterDrawerOpen;
-    }
-
-    private void ApplyFilters()
-    {
-        VM.ApplyAdvancedFilters(
-            filterDateRange,
-            filterOperationType,
-            filterMinAmount,
-            filterMaxAmount
-        );
-
-        isFilterDrawerOpen = false;
-
-        curentItems = GetActiveItems();
-        StateHasChanged();
-    }
+    private int selectedIndex = 0;
+    private bool showLeftHint;
+    private bool showRightHint;
     // Ваш существующий C# код остается без изменений...
     // ...
-
+    private Virtualize<FinanceItem>? _virtualizeComponent;
     private int activeTabIndex = 0;
     private bool TabsOnTop = false;
     private ElementReference scrollRef;
@@ -355,6 +310,7 @@
     protected override async Task OnInitializedAsync()
     {
         VM.DataUpdated += async (_, __) => await InvokeAsync(StateHasChanged);
+        VM.DataFiltred += async (_, __) => await FilterChangedAsync();
         await Task.Yield();
 
         await InvokeAsync(async () =>
@@ -409,6 +365,47 @@
     {
         activeTabIndex = index;
         curentItems = GetActiveItems();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FilterChangedAsync()
+    {
+        curentItems = GetActiveItems();
+        if (_virtualizeComponent != null)
+            await _virtualizeComponent.RefreshDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+    private void SwipeEndAsync(SwipeEventArgs args)
+    {
+        int maxIndex = 3; // у тебя 4 слайда: 0..3
+
+        if (args.SwipeDirection == SwipeDirection.RightToLeft)
+        {
+            if (selectedIndex >= maxIndex)
+            {
+                showRightHint = true;
+                _ = HideHintAsync(isRight: true);
+                return;
+            }
+            selectedIndex++;
+        }
+
+        if (args.SwipeDirection == SwipeDirection.LeftToRight)
+        {
+            if (selectedIndex <= 0)
+            {
+                showLeftHint = true;
+                _ = HideHintAsync(isRight: false);
+                return;
+            }
+            selectedIndex--;
+        }
+    }
+    private async Task HideHintAsync(bool isRight)
+    {
+        await Task.Delay(250);
+        if (isRight) showRightHint = false;
+        else showLeftHint = false;
         await InvokeAsync(StateHasChanged);
     }
 }

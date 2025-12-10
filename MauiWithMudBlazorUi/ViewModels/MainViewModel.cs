@@ -5,7 +5,8 @@ using EfcToXamarinAndroid.Core.Repository;
 using EfcToXamarinAndroid.Core.Services;
 using EfcToXamarinAndroid.MigrationsHelper.Migrations;
 using MauiAppWithMudBlazor.Components.Models;
-
+using Microsoft.Maui.Controls;
+using MudBlazor;
 using PermissionStatus = EfcToXamarinAndroid.Core.Services.PermissionStatus;
 
 namespace EfcToXamarinAndroid.Core.ViewModels
@@ -21,6 +22,17 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         private readonly IUIService _uiService;
         private readonly IPermissionService _permissionService;
         private readonly AppConfiguration _appConfiguration;
+
+        public OperacionTyps CurentType { get; private set; }
+
+        private DateRange? _activeDateRange;
+        private decimal? _activeMinAmount;
+        private decimal? _activeMaxAmount;
+        private string? _activeMcc;
+
+        private string? _activeDescription;
+        private string? _activeMccDescription;
+        private string? _activeTag;
 
         public List<FinanceItem> AllItems { get; private set; } = [];
         public Dictionary<OperacionTyps, List<FinanceItem>> FilteredItems { get; private set; } = new();
@@ -67,8 +79,82 @@ namespace EfcToXamarinAndroid.Core.ViewModels
 
         #endregion
 
+        #region
+        /// <summary>
+        /// Устанавливает период фильтрации.
+        /// </summary>
+        public void SetDateRange(DateRange? range)
+        {
+            _activeDateRange = range;
+           
+        }
+
+        /// <summary>
+        /// Устанавливает минимальную сумму фильтра.
+        /// </summary>
+        public void SetMinAmount(decimal? min)
+        {
+            _activeMinAmount = min;
+           
+        }
+
+        /// <summary>
+        /// Устанавливает максимальную сумму фильтра.
+        /// </summary>
+        public void SetMaxAmount(decimal? max)
+        {
+            _activeMaxAmount = max;
+            
+        }
+
+        /// <summary>
+        /// Устанавливает MCC код фильтра.
+        /// </summary>
+        public void SetMcc(string? mcc)
+        {
+            _activeMcc = mcc;
+            
+        }
+
+        /// <summary>
+        /// Применяет все фильтры одновременно.
+        /// </summary>
+        public void SetAdvancedFilters(DateRange? range, decimal? minAmount, decimal? maxAmount,
+                               string? description, string? mccDescription, string? tag, string? mcc = null)
+        {
+            _activeDateRange = range;
+            _activeMinAmount = minAmount;
+            _activeMaxAmount = maxAmount;
+            _activeMcc = mcc;
+
+            _activeDescription = description;
+            _activeMccDescription = mccDescription;
+            _activeTag = tag;
+
+            DataFiltred?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Сбрасывает фильтры.
+        /// </summary>
+        public void ClearAdvancedFilters()
+        {
+            _activeDateRange = null;
+            _activeMinAmount = null;
+            _activeMaxAmount = null;
+            _activeMcc = null;
+
+            _activeDescription = null;
+            _activeMccDescription = null;
+            _activeTag = null;
+
+            DataFiltred?.Invoke(this, EventArgs.Empty);
+
+        }
+        #endregion
 
         public event EventHandler? DataUpdated;
+        public event EventHandler? DataFiltred;
 
         public MainViewModel(
             ISmsReader smsReader,
@@ -137,9 +223,11 @@ namespace EfcToXamarinAndroid.Core.ViewModels
             }
 
         }
+
         /// <summary>
         /// Вычисляет и обновляет статистические показатели на основе текущего списка всех операций.
         /// </summary>
+        
         private void UpdateStatistics()
         {
             // Сбрасываем предыдущие значения
@@ -174,17 +262,61 @@ namespace EfcToXamarinAndroid.Core.ViewModels
 
         public IEnumerable<FinanceItem> GetFilteredItems(OperacionTyps type)
         {
-            IEnumerable<FinanceItem> fitredItems;
-            if (type == OperacionTyps.None)
-                fitredItems = AllItems;
-            else
-                fitredItems = FilteredItems.TryGetValue(type, out var list) ? list : Enumerable.Empty<FinanceItem>();
-            FiltredTransactionsCount = fitredItems.Count();
-            FiltredTransactionsSumm = fitredItems.Sum(x => x.Sum);
-            CalculateAdvancedStats(fitredItems);
-            return fitredItems;
-        }
+            CurentType = type;
+            IEnumerable<FinanceItem> query = AllItems;
 
+            // 1. Фильтр по табу (тип операции)
+            if (type != OperacionTyps.None)
+            {
+                query = query.Where(x => x.OperationType == type);
+            }
+
+            // ... (Существующие фильтры по дате и сумме оставляем как есть) ...
+            if (_activeDateRange is not null)
+            {
+                if (_activeDateRange.Start.HasValue) query = query.Where(x => x.Date.Date >= _activeDateRange.Start.Value.Date);
+                if (_activeDateRange.End.HasValue) query = query.Where(x => x.Date.Date <= _activeDateRange.End.Value.Date);
+            }
+            if (_activeMinAmount.HasValue) query = query.Where(x => (decimal)x.Sum >= _activeMinAmount.Value);
+            if (_activeMaxAmount.HasValue) query = query.Where(x => (decimal)x.Sum <= _activeMaxAmount.Value);
+
+            // === НОВЫЕ ФИЛЬТРЫ ===
+
+            // 1. Фильтр по описанию (частичное совпадение)
+            if (!string.IsNullOrWhiteSpace(_activeDescription))
+            {
+                query = query.Where(x => x.Description != null &&
+                                         x.Description.Contains(_activeDescription, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 2. Фильтр по категории (MccDescription)
+            if (!string.IsNullOrWhiteSpace(_activeMccDescription))
+            {
+                query = query.Where(x => x.MccDescription != null &&
+                                         x.MccDescription.Equals(_activeMccDescription, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 3. Фильтр по Тегу (поиск тега внутри Title)
+            if (!string.IsNullOrWhiteSpace(_activeTag))
+            {
+                // Логика: если тег содержится в Title. 
+                // Т.к. вы разбиваете Title по пробелам в GetTags, здесь ищем вхождение слова.
+                query = query.Where(x => x.Title != null &&
+                                         x.Title.Contains(_activeTag, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var result = query.ToList();
+
+            // 5. Обновляем вычисляемые поля
+            FiltredTransactionsCount = result.Count;
+            FiltredTransactionsSumm = result.Sum(x => x.Sum);
+            CalculateAdvancedStats(result);
+
+           
+
+            return result;
+        }
+        
         private void CalculateAdvancedStats(IEnumerable<FinanceItem> items)
         {
             var list = items.ToList();
@@ -463,8 +595,6 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         // Вставьте следующий метод сюда, например, после метода AddItem()      
         public async Task<IEnumerable<FinanceItem>> GetFinanceItemsChunk(GetItemsRequest request)
         {
-
-
             var items = await DatesRepositorio.GetDataItems(request);
             var fintems = items
               .Select(item => new FinanceItem

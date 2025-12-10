@@ -40,7 +40,7 @@ namespace MauiAppWithMudBlazor
             builder.Services.AddScoped<IDataService, DataService>();
             // UI и платформенные реализации добавим ниже (см. раздел 3)
             // ViewModel как сервис
-            builder.Services.AddScoped<EfcToXamarinAndroid.Core.ViewModels.MainViewModel>();
+            builder.Services.AddSingleton<EfcToXamarinAndroid.Core.ViewModels.MainViewModel>();
 
 
             // ISmsReader: Android — реальная реализация; прочие — заглушка

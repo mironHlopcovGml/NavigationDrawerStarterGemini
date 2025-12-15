@@ -42,7 +42,7 @@ namespace MauiAppWithMudBlazor.Components.Models
         private string GetFormattedSum()
         {
             // Определяем, является ли операция расходной (оплатой)
-            bool isExpense = OperationType.ToString() == "OPLATA" || OperationType.ToString() == "NALICHNYE";
+            bool isExpense = OperationType == OperacionTyps.OPLATA || OperationType == OperacionTyps.NALICHNYE;
 
             // Для расходных операций показываем отрицательное число (даже если в базе оно положительное)
             if (isExpense)

@@ -22,5 +22,44 @@ namespace MauiAppWithMudBlazor.Components.Models
 
         // 4. Аномалии (Топ 3 самых крупных операции)
         public List<FinanceItem> Anomalies { get; set; } = new();
+
+        // Новые ключевые метрики для Слайда 1
+        /// <summary>Чистый баланс за период (Доход - Расход)</summary>
+        public float NetFlow { get; set; }
+
+        /// <summary>Средний расход в день за прошедшие дни месяца</summary>
+        public float AverageDailyExpense { get; set; }
+
+        /// <summary>Расчетный ежедневный лимит трат (для выхода в ноль или достижения цели)</summary>
+        public float CalculatedDailyLimit { get; set; }
+
+
+        // Метрики для Слайда 2: Сравнение с прошлым месяцем
+        public float LastMonthTotalExpense { get; set; }
+        public float LastMonthTotalIncome { get; set; }
+
+        /// <summary>Процент изменения расходов (Тек. месяц vs Прошлый месяц)</summary>
+        public float ExpenseChangePercent
+        {
+            get
+            {
+                if (LastMonthTotalExpense == 0) return 0; // Избегаем деления на ноль
+                return (TotalExpense - LastMonthTotalExpense) / LastMonthTotalExpense;
+            }
+        }
+
+        /// <summary>Процент изменения доходов (Тек. месяц vs Прошлый месяц)</summary>
+        public float IncomeChangePercent
+        {
+            get
+            {
+                if (LastMonthTotalIncome == 0) return 0;
+                return (TotalIncome - LastMonthTotalIncome) / LastMonthTotalIncome;
+            }
+        }
+
+        public float TotalIncome { get; set; }
+        public float TotalExpense { get; set; }
+        public float AverageExpenseCheck { get; set; }
     }
 }

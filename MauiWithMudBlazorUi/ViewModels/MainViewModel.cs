@@ -4,6 +4,7 @@ using EfcToXamarinAndroid.Core.Models;
 using EfcToXamarinAndroid.Core.Repository;
 using EfcToXamarinAndroid.Core.Services;
 using EfcToXamarinAndroid.MigrationsHelper.Migrations;
+
 using MauiAppWithMudBlazor.Components.Models;
 using Microsoft.Maui.Controls;
 using MudBlazor;
@@ -38,6 +39,19 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         public Dictionary<OperacionTyps, List<FinanceItem>> FilteredItems { get; private set; } = new();
 
         #region Статистические свойства
+        /// <summary>
+        /// Данные первого слайда.
+        /// </summary>
+        public FlowStatisticsDto FlowStats { get; private set; } = new();
+        /// <summary>
+        /// Данные второго слайда.
+        /// </summary>
+        public DynamicsStatisticsDto DynamicsStats { get; private set; } = new();
+
+        public DynamicsStatisticsDto CategoryStats { get; private set; } = new();
+
+        public TabStatisticsDto CurrentStats { get; private set; } = new();
+
         /// <summary>
         /// Общая сумма доходов за весь период.
         /// </summary>
@@ -75,7 +89,6 @@ namespace EfcToXamarinAndroid.Core.ViewModels
         /// </summary>
         public float FiltredTransactionsSumm { get; set; }
 
-        public TabStatisticsDto CurrentStats { get; private set; } = new();
 
         #endregion
 
@@ -312,7 +325,10 @@ namespace EfcToXamarinAndroid.Core.ViewModels
             FiltredTransactionsSumm = result.Sum(x => x.Sum);
             CalculateAdvancedStats(result);
 
-           
+            CalculateFlowStatistics(result);
+            CalculateDynamicsStatistics(result);
+            CalculateCategoryStatistics(result);
+
 
             return result;
         }
@@ -364,6 +380,180 @@ namespace EfcToXamarinAndroid.Core.ViewModels
             }
 
             CurrentStats = stats;
+        }
+
+        
+        private void CalculateFlowStatistics(List<FinanceItem> currentItems)
+        {
+            var flowStats = new FlowStatisticsDto();
+
+            // Защита от пустых данных
+            if (currentItems == null || currentItems.Count == 0)
+            {
+                flowStats.CurrentPeriodDisplay = DateTime.Now.ToString("MMMM yyyy");
+                FlowStats = flowStats;
+                return;
+            }
+
+            // 1. Расчет Доходов и Расходов
+            flowStats.TotalIncome = currentItems.Where(i=>i.OperationType==OperacionTyps.ZACHISLENIE).Sum(x => x.Sum);
+            flowStats.TotalExpense = currentItems.Where(i => i.OperationType != OperacionTyps.ZACHISLENIE)
+                                                 .Where(i=>i.OperationType!=OperacionTyps.UNREACHABLE)
+                                                 .Sum(x => x.Sum);
+
+            // 2. Определение отображаемого периода и границ
+
+            // Берем границы из фильтра, если они установлены
+            DateTime startDisplay = _activeDateRange?.Start?.Date ?? currentItems.Min(x => x.Date).Date;
+            DateTime endDisplay = _activeDateRange?.End?.Date ?? currentItems.Max(x => x.Date).Date;
+
+            // Если фильтр не установлен, и это не один и тот же день, используем форматирование диапазона
+            if (_activeDateRange != null && startDisplay.Date != endDisplay.Date)
+            {
+                flowStats.CurrentPeriodDisplay = $"{startDisplay:dd MMM} - {endDisplay:dd MMM yyyy}";
+            }
+            else
+            {
+                // Если это один день или фильтр не установлен (например, в табе "Все")
+                flowStats.CurrentPeriodDisplay = $"{startDisplay:dd MMMM yyyy}";
+            }
+
+            // 3. Расчет Дневного Лимита (работает только для текущего или будущего периода)
+
+            var today = DateTime.Now.Date;
+
+            // Определяем, является ли период архивным
+            flowStats.IsPeriodInPast = endDisplay < today;
+
+            if (flowStats.IsPeriodInPast)
+            {
+                flowStats.CalculatedDailyLimit = 0;
+            }
+            else
+            {
+                // Для расчета лимита, если период заканчивается в будущем, 
+                // берем конец месяца, в который попадает today, или конец фильтра, если он раньше.
+                DateTime calculationEndDay = new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+
+                // Если конец фильтра раньше конца месяца, используем конец фильтра
+                if (endDisplay < calculationEndDay)
+                {
+                    calculationEndDay = endDisplay;
+                }
+
+                // Количество дней, оставшихся для траты (от сегодняшнего дня до конца периода)
+                var remainingDays = (calculationEndDay - today).TotalDays + 1;
+
+                if (remainingDays < 1) remainingDays = 1;
+
+                var balance = flowStats.NetFlow;
+
+                // Лимит рассчитываем только для положительного чистого баланса
+                flowStats.CalculatedDailyLimit = balance > 0 ? (float)(balance / remainingDays) : 0;
+            }
+
+            // Сохраняем результат
+            FlowStats = flowStats;
+        }
+        // Внутри класса MainViewModel
+        private void CalculateDynamicsStatistics(List<FinanceItem> currentItems)
+        {
+            var dynamicsStats = new DynamicsStatisticsDto();
+
+            if (currentItems.Any())
+            {
+                // 1. Определяем границы для графика
+                DateTime minDate = _activeDateRange?.Start?.Date ?? currentItems.Min(x => x.Date).Date;
+                DateTime maxDate = _activeDateRange?.End?.Date ?? currentItems.Max(x => x.Date).Date;
+
+                // Если период завершился, берем весь период. Если активен, обрезаем по сегодня.
+                DateTime today = DateTime.Now.Date;
+                if (maxDate > today) maxDate = today;
+
+            
+
+                // 2. Группируем данные в словари для быстрого поиска
+                var incomeByDate = currentItems
+                    .Where(i => i.OperationType == OperacionTyps.ZACHISLENIE)
+                    .GroupBy(i => i.Date.Date)
+                    .ToDictionary(g => g.Key, g => g.Sum(i => i.Sum));
+
+                var expenseByDate = currentItems
+                    .Where(i => i.OperationType != OperacionTyps.ZACHISLENIE)
+                    .Where(i => i.OperationType != OperacionTyps.UNREACHABLE)
+                    .GroupBy(i => i.Date.Date)
+                    .ToDictionary(g => g.Key, g => g.Sum(i => i.Sum));
+
+                // 3. Цикл по всем дням для создания непрерывного графика (с заполнением нулями)
+                var labels = new List<string>();
+                var incomeData = new List<double>();
+                var expenseData = new List<double>();
+
+                for (DateTime date = minDate; date <= maxDate; date = date.AddDays(1))
+                {
+                    // Используем только день для подписи, если это не полный год
+                    labels.Add(date.ToString("dd.MM"));
+
+                    // Заполняем нулем, если нет данных за этот день
+                    incomeData.Add(incomeByDate.ContainsKey(date) ? (double)incomeByDate[date] : 0.0);
+                    expenseData.Add(expenseByDate.ContainsKey(date) ? (double)expenseByDate[date] : 0.0);
+                }
+
+                dynamicsStats.DailyChartLabels = labels.ToArray();
+                dynamicsStats.DailyIncomeData = incomeData.ToArray();
+                dynamicsStats.DailyExpenseData = expenseData.ToArray();
+            }
+
+            // Присваиваем результат
+            DynamicsStats = dynamicsStats;
+        }
+
+        private void CalculateCategoryStatistics(List<FinanceItem> currentItems)
+        {
+            // ... (Расчет FlowStats и DynamicsStats здесь) ...
+
+            // --- Расчет Слайда 3: Категории ---
+            var categoryStats = new DynamicsStatisticsDto();
+
+            if (currentItems.Any())
+            {
+                // Решаем, что считать за "Total" для расчета процентов. 
+                // Если выбран таб "Расход", Total = TotalExpense. Если "Доход", Total = TotalIncome.
+                // Если "Все" (OperacionTyps.None), то лучше считать расходы, т.к. категории обычно интересны для трат.
+
+                // Определяем базовый список для группировки
+                IEnumerable<FinanceItem> itemsToGroup;
+
+                //if (CurentType == OperacionTyps.ZACHISLENIE)
+                //{
+                //    itemsToGroup = currentItems.Where(i=>i.OperationType== OperacionTyps.ZACHISLENIE);
+                //}
+                //else // OPLATA, NALICHNYE, or None (показываем расходы по умолчанию)
+                //{
+                //    itemsToGroup = currentItems.Where(i => i.OperationType == OperacionTyps.OPLATA || i.OperationType == OperacionTyps.NALICHNYE);
+                //}
+
+                var totalForCalc = currentItems.Sum(x => x.Sum);
+                if (totalForCalc == 0) totalForCalc = 1; // Защита от деления на 0
+
+                categoryStats.TopCategories = currentItems
+                    .Where(x => !string.IsNullOrEmpty(x.MccDescription))
+                    .GroupBy(x => x.MccDescription)
+                    .Select(g => new CategoryStat
+                    {
+                        Name = g.Key!,
+                        Amount = g.Sum(x => x.Sum),
+                        Percentage = (g.Sum(x => x.Sum) / totalForCalc) * 100
+                    })
+                    .OrderByDescending(x => x.Amount)
+                    .Take(5)
+                    .ToList();
+            }
+
+            // Присваиваем результаты
+            // FlowStats = flowStats;
+            // DynamicsStats = dynamicsStats;
+            CategoryStats = categoryStats;
         }
 
         public IEnumerable<string?> GetDeskriptions(OperacionTyps type)

@@ -35,63 +35,175 @@
                          TData="object"
                          Style="height: 100%;">
 
-                @* СЛАЙД 1: Общие цифры (Баланс, Средний, Мин/Макс) *@
+                @* СЛАЙД 1: Чистый денежный поток (Баланс месяца) *@
                 <MudCarouselItem Transition="Transition.Slide">
                     <div class="d-flex flex-column justify-center align-center h-100 pa-2">
-                        <MudText Typo="Typo.h4" Style="font-weight:bold;">@VM.FiltredTransactionsSumm.ToString("C0")</MudText>
-                        <MudText Typo="Typo.caption" Class="mb-4">Общая сумма (@VM.FiltredTransactionsCount оп.)</MudText>
 
+                        @* Заголовок *@
+                        <MudText Typo="Typo.h6" Class="mb-1" Style="opacity: 0.8;">Чистый баланс</MudText>
+
+                        @* Главная цифра (NetFlow) *@
+                        <MudText Typo="Typo.h3" Style="font-weight:bold;"
+                                 Color="@(VM.FlowStats.NetFlow >= 0 ? Color.Success : Color.Error)">
+                            @VM.FlowStats.NetFlow.ToString("N0")
+                        </MudText>
+
+                        @* Подзаголовок с периодом *@
+                        <MudText Typo="Typo.caption" Class="mb-6 py-1 px-3 rounded"
+                                 Style="background-color: rgba(255,255,255,0.1);">
+                            @VM.FlowStats.CurrentPeriodDisplay
+                        </MudText>
+
+                        @* Сетка с деталями *@
                         <MudGrid Class="w-100">
-                            <MudItem xs="4" Class="text-center">
-                                <MudText Typo="Typo.caption">Средний</MudText>
-                                <MudText Typo="Typo.subtitle2">@VM.CurrentStats.AverageCheck.ToString("N0")</MudText>
+                            @* Доход *@
+                            <MudItem xs="4" Class="text-center border-r" Style="border-color: rgba(255,255,255,0.2);">
+                                <MudText Typo="Typo.caption" Color="Color.Success">Доход</MudText>
+                                <div class="d-flex justify-center align-center mt-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" Color="Color.Success" Class="mr-1" Style="font-size: 1rem;" />
+                                    <MudText Typo="Typo.body2" Style="font-weight:bold;">@VM.FlowStats.TotalIncome.ToString("N0")</MudText>
+                                </div>
                             </MudItem>
-                            <MudItem xs="4" Class="text-center">
-                                <MudText Typo="Typo.caption">Макс.</MudText>
-                                <MudText Typo="Typo.subtitle2" Color="Color.Success">@VM.CurrentStats.MaxSum.ToString("N0")</MudText>
+
+                            @* Расход *@
+                            <MudItem xs="4" Class="text-center border-r" Style="border-color: rgba(255,255,255,0.2);">
+                                <MudText Typo="Typo.caption" Color="Color.Error">Расход</MudText>
+                                <div class="d-flex justify-center align-center mt-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" Color="Color.Error" Class="mr-1" Style="font-size: 1rem;" />
+                                    <MudText Typo="Typo.body2" Style="font-weight:bold;">@VM.FlowStats.TotalExpense.ToString("N0")</MudText>
+                                </div>
                             </MudItem>
+
+                            @* Дневной лимит (Отображается, только если период не в прошлом) *@
                             <MudItem xs="4" Class="text-center">
-                                <MudText Typo="Typo.caption">Мин.</MudText>
-                                <MudText Typo="Typo.subtitle2" Color="Color.Error">@VM.CurrentStats.MinSum.ToString("N0")</MudText>
+                                <MudText Typo="Typo.caption">
+                                    @(VM.FlowStats.IsPeriodInPast ? "Ср. лимит" : "Лимит/день")
+                                </MudText>
+                                <div class="d-flex justify-center align-center mt-1">
+                                    @if (VM.FlowStats.CalculatedDailyLimit > 0)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" Color="Color.Info" Class="mr-1" Style="font-size: 1rem;" />
+                                        <MudText Typo="Typo.body2" Style="font-weight:bold;">@VM.FlowStats.CalculatedDailyLimit.ToString("N0")</MudText>
+                                    }
+                                    else if (VM.FlowStats.IsPeriodInPast)
+                                    {
+                                        <MudText Typo="Typo.body2" Style="font-weight:bold;">N/A</MudText>
+                                    }
+                                    else
+                                    {
+                                        // Если баланс < 0
+                                        <MudText Typo="Typo.body2" Color="Color.Warning" Style="font-weight:bold;">Перерасход</MudText>
+                                    }
+                                </div>
                             </MudItem>
                         </MudGrid>
                     </div>
                 </MudCarouselItem>
 
-                @* СЛАЙД 2: График по дням *@
+               @* СЛАЙД 2: Динамика Доходов и Расходов (График) *@
                 <MudCarouselItem Transition="Transition.Slide">
-                    <div class="d-flex flex-column align-center justify-center h-100 pa-2">
-                        <MudText Typo="Typo.caption">Динамика операций (кол-во)</MudText>
-                        @if (VM.CurrentStats.DailyChartData.Length > 0)
-                        {
-                            <MudChart ChartType="ChartType.Bar"
-                                      ChartSeries="@(new List<ChartSeries>() { new ChartSeries() { Name = "Операции", Data = VM.CurrentStats.DailyChartData } })"
-                                      XAxisLabels="@VM.CurrentStats.DailyChartLabels"
-                                      Width="100%"
-                                      Height="140px"
-                                      LegendPosition="Position.Bottom" />
-                        }
-                        else
-                        {
-                            <MudText>Нет данных для графика</MudText>
-                        }
-                    </div>
+                     <div class="d-flex flex-column justify-start align-center h-100 pa-2">
+                         
+                         <MudText Typo="Typo.h6" Class="mb-4" Style="opacity: 0.8;">Динамика Доходов и Расходов</MudText>
+                         
+                         @if (VM.DynamicsStats.DailyChartLabels.Any())
+                         {
+                             // Создаем наборы данных для MudChart
+                             var series = new List<ChartSeries>
+                             {
+                                 new ChartSeries() { Name = "Доход", Data = VM.DynamicsStats.DailyIncomeData },
+                                 new ChartSeries() { Name = "Расход", Data = VM.DynamicsStats.DailyExpenseData }
+                             };
+
+                             // Определяем цвета для серий
+                             var chartOptions = new ChartOptions
+                             {
+                                 YAxisTicks = 3, // Ограничиваем количество тиков на Y, чтобы не загромождать
+                                 ChartPalette = new[] { Colors.Green.Accent3, Colors.Red.Accent3 } // Зеленый для Дохода, Красный для Расхода
+                             };
+
+                             // Вывод графика
+                             <MudChart ChartType="ChartType.Line" 
+                                       ChartSeries="@series" 
+                                       XAxisLabels="@VM.DynamicsStats.DailyChartLabels"
+                                       Width="100%" 
+                                       Height="250px"
+                                       ChartOptions="@chartOptions"
+                                       Style="max-width: 400px; padding: 0 10px;"/>
+                         }
+                         else
+                         {
+                             <MudText Typo="Typo.body1" Color="Color.Surface" Class="mt-8">
+                                 Нет данных для построения графика в этом периоде.
+                             </MudText>
+                         }
+                     </div>
                 </MudCarouselItem>
 
-                @* СЛАЙД 3: Топ категорий *@
-                <MudCarouselItem Transition="Transition.Slide">
-                    <div class="d-flex flex-column justify-center h-100 pa-2">
-                        <MudText Typo="Typo.caption" Class="mb-1 text-center">Топ 5 категорий</MudText>
-                        @foreach (var cat in VM.CurrentStats.TopCategories)
-                        {
-                            <div class="d-flex justify-space-between align-center mb-1">
-                                <MudText Typo="Typo.caption" Style="width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@cat.Name</MudText>
-                                <MudProgressLinear Color="Color.Secondary" Value="@cat.Percentage" Class="mx-2" Style="width: 30%;" />
-                                <MudText Typo="Typo.caption" Style="width: 30%; text-align: right;">@cat.Amount.ToString("N0") (@cat.Percentage.ToString("F0")%)</MudText>
-                            </div>
-                        }
-                    </div>
-                </MudCarouselItem>
+
+
+@* СЛАЙД 3: Топ-5 Категорий (С исправлением LegendPosition) *@
+<MudCarouselItem Transition="Transition.Slide">
+    <div class="d-flex flex-column justify-start align-center h-100 pa-2">
+        <MudText Typo="Typo.h6" Class="mb-4" Style="opacity: 0.8;">Топ-5 Категорий</MudText>
+        
+        @if (VM.CategoryStats.TopCategories.Any())
+        {
+            // 1. Подготовка данных для Pie Chart
+            var pieChartData = VM.CategoryStats.TopCategories.Select(x => (double)x.Amount).ToArray();
+            var pieChartLabels = VM.CategoryStats.TopCategories.Select(x => $"{x.Name} ({x.Percentage:F1}%)").ToArray();
+            
+            // 2. Определение палитры цветов с улучшенным разнообразием
+            var isIncome = VM.CurentType.ToString() == "ZACHISLENIE"; // Предполагаем, что enum импортирован
+            var palette = isIncome
+                ? new string[] { Colors.Green.Darken2, Colors.Cyan.Darken1, Colors.LightGreen.Darken1, Colors.Blue.Darken1, Colors.Teal.Darken1 }
+                : new string[] { Colors.Red.Darken2, Colors.DeepOrange.Darken1, Colors.Orange.Darken1, Colors.Pink.Darken1, Colors.Red.Lighten1 };
+            
+            // 3. Базовые ChartOptions (только поддерживаемые свойства)
+            var chartOptions = new ChartOptions
+            {
+                ChartPalette = palette,
+             @*    DisableLegend = false // Включаем легенду *@
+            };
+            
+            // 4. Кастомные опции Chart.js для легенды, тултипов, анимации и отзывчивости
+            var chartJsOptions = new
+            {
+                responsive = true, // Отзывчивость
+                animation = new { duration = 1000 }, // Анимация с длительностью
+                plugins = new
+                {
+                    legend = new { position = "bottom", display = true }, // Легенда снизу
+                    tooltip = new { enabled = true } // Тултипы включены
+                }
+            };
+            
+            // 5. Вывод графика в улучшенном контейнере
+            <div class="d-flex justify-center align-center w-100 flex-grow-1" style="min-height: 300px; max-width: 450px;">
+                <MudChart ChartType="ChartType.Pie"
+                          ChartData="@pieChartData"
+                          ChartLabels="@pieChartLabels"
+                          Width="100%"
+                          Height="100%"
+                          ChartOptions="@chartOptions"
+                          InputChartJsOptions="@chartJsOptions" />
+            </div>
+            
+            <MudText Typo="Typo.caption" Class="mt-3" Style="opacity: 0.6;">
+                Самая крупная категория: <strong>@VM.CategoryStats.TopCategories.First().Name</strong> (@VM.CategoryStats.MaxCategoryAmount.ToString("N0"))
+            </MudText>
+        }
+        else
+        {
+            <div class="d-flex flex-column align-center mt-8">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" Class="mb-4" />
+                <MudText Typo="Typo.body1" Color="Color.Surface">
+                    Нет данных для анализа категорий в этом периоде. Загрузите данные или измените фильтры.
+                </MudText>
+            </div>
+        }
+    </div>
+</MudCarouselItem>
 
                 @* СЛАЙД 4: Аномалии *@
                 <MudCarouselItem Transition="Transition.Slide">
